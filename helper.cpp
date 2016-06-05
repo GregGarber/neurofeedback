@@ -54,12 +54,6 @@ void Helper::paint(QPainter *painter, QPaintEvent *event, int elapsed)
     painter->drawLine(-half_width, 0, half_width, 0);
     painter->drawLine(0,-half_height,0, half_height);
 
-    painter->setPen(textPen);
-    painter->fillRect(-half_width,-15, width,30, background);
-    painter->setFont(textFont);
-    QString score_str = QString("%1 %2 %3").arg(title).arg(enhance,-5, 'f', 1, '0').arg((int)score,7,10, QChar('0'));
-    painter->drawText(QRect(-half_width, -15, width, 30), Qt::AlignCenter, score_str);
-
     Dot dot;
     int opacity;
     for(unsigned int i=0; i<dot_history.size(); i++){
@@ -71,6 +65,12 @@ void Helper::paint(QPainter *painter, QPaintEvent *event, int elapsed)
         painter->setPen(dotPen);
         painter->drawEllipse(QRectF(half_width * dot.location.rx(),  -half_height * dot.location.ry(),50,50));
     }
+
+    painter->setPen(textPen);
+    painter->fillRect(-half_width,-15, width,30, background);
+    painter->setFont(textFont);
+    QString score_str = QString("%1 %2 %3").arg(title).arg(enhance,-5, 'f', 1, '0').arg((int)score,7,10, QChar('0'));
+    painter->drawText(QRect(-half_width, -15, width, 30), Qt::AlignCenter, score_str);
     painter->restore();
 }
 

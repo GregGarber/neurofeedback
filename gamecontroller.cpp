@@ -1,183 +1,150 @@
 #include "gamecontroller.h"
 #include <iostream>
-
+#include "window.h"
 GameController::GameController(Helper* helper, VolumeControl *volume, QSqlDatabase *db,  QObject *parent)
-    : QObject(parent), helper(helper), volume(volume), db(db)
+        : QObject(parent), helper(helper), volume(volume), db(db)
 {
     helper->setDot(QPointF(0.1, 0.1), QColor("green"));
     helper->setDot(QPointF(0.0, 0.0), QColor("blue"));
     helper->setDot(QPointF(0.25, 0.25), QColor("red"));
-    //updateStatistics();
-    connect(&stats_timer, SIGNAL(timeout()), this, SLOT(updateStatistics()));
-    stats_timer.setSingleShot(false);
-    stats_timer.setInterval( statistics_interval );
-    stats_timer.start();
     computeGameMode();
 }
+void GameController::setEEGData(EEGData &data){
+    this->eeg_data = &data;
+}
+
 void GameController::setSessionID(int session_id){
     this->session_id = session_id;
 }
 
- void GameController::setData(qreal left_alpha, qreal  right_alpha, qreal  left_beta, qreal  right_beta){
-     QPointF location;
-     QColor color;
-     QString title;
-     qreal left_volume=0, right_volume=0;
-     qreal x=0,y=0, n=0, enhance;
-     int r=0,g=0,b=0;
+void GameController::setData(){
+    if(!(
+                            eeg_data->left.alpha.current > 0 &&
+                            eeg_data->right.alpha.current > 0 &&
+                            eeg_data->left.beta.current > 0 &&
+                            eeg_data->right.beta.current > 0)
+                    ) return;
+    QPointF location;
+    QColor color;
+    QString title;
+    qreal left_volume=0, right_volume=0;
+    qreal x=0,y=0, n=0, enhance;
+    int r=0,g=0,b=0;
 
-     n = ((( left_beta + right_beta )/(left_beta+right_beta+left_alpha+right_alpha)));
-     enhance = (( left_beta/(left_beta + right_beta) ) + ( right_alpha/(left_alpha + right_alpha))) ;
+    n = ((( eeg_data->left.beta.current + eeg_data->right.beta.current )/(eeg_data->left.beta.current+eeg_data->right.beta.current+eeg_data->left.alpha.current+eeg_data->right.alpha.current)));
+    enhance = (( eeg_data->left.beta.current/(eeg_data->left.beta.current + eeg_data->right.beta.current) ) + ( eeg_data->right.alpha.current/(eeg_data->left.alpha.current + eeg_data->right.alpha.current))) ;
 
-     switch(currentGameModeY){
-     case NoGameY:
-         y=0;
-         title += QString(" No Game Y. ");
-         break;
-     case RightAlphaGreaterThanRightBeta:
-         y = (( right_alpha / ( right_alpha + right_beta )));
-         title += QString(" Y: RA>RB %1").arg(y*100, -5, 'f', 1,'0');
-         break;
-     case LeftBetaGreaterThanLeftAlpha:
-         y = (( left_beta / ( left_beta + left_alpha )));
-         title += QString(" Y: LB>LA %1").arg(y*100, -5, 'f', 1,'0');
-         break;
-     case FrontalBetaGreaterThanAlpha:
-         y = ((( left_beta + right_beta )/(left_beta+right_beta+left_alpha+right_alpha)));
-         title += QString(" Y: B>A %1").arg(y*100, -5, 'f', 1,'0');
-         break;
-     }
+    switch(currentGameModeY){
+    case RaiseLeftBeta:
+        y = eeg_data->left.beta.current/ (eeg_data->left.beta.current + eeg_data->left.beta.mean);
+        title += QString(" Y: LB Low %1").arg(y*100, -5, 'f', 1,'0');
+        break;
+    case LowerRightBeta:
+        y = 1 -  (eeg_data->right.beta.current /(eeg_data->right.beta.current + eeg_data->right.beta.mean));
+        title += QString(" Y: RB High %1").arg(y*100, -5, 'f', 1,'0');
+        break;
+    case RaiseLeftBetaToRightAlpha:
+        y = (( eeg_data->left.beta.current / ( eeg_data->left.beta.current + eeg_data->right.alpha.current )));
+        title += QString(" Y: LB>LA %1").arg(y*100, -5, 'f', 1,'0');
+        break;
+    case RaiseLeftBetaToLeftAlpha:
+        y = (( eeg_data->left.beta.current / ( eeg_data->left.beta.current + eeg_data->left.alpha.current )));
+        title += QString(" Y: LB>LA %1").arg(y*100, -5, 'f', 1,'0');
+        break;
+    case RaiseFrontalBetaToAlpha:
+        y = ((( eeg_data->left.beta.current + eeg_data->right.beta.current )/(eeg_data->left.beta.current+eeg_data->right.beta.current+eeg_data->left.alpha.current+eeg_data->right.alpha.current)));
+        title += QString(" Y: B>A %1").arg(y*100, -5, 'f', 1,'0');
+        break;
+    case RaiseLeftBetaToRight:
+        y = (( eeg_data->left.beta.current / (eeg_data->left.beta.current + eeg_data->right.beta.current ))) ;
+        title = QString("X: LB>RB %1 ").arg(y*100, -5, 'f', 1,'0') + title;
+        break;
+    }
+    //@eeg_data->raGrb,                 @eeg_data->lbGla,                   @eeg_data->lbGrb ,                @eeg_data->raGla
+    //0.48048442210917675, 0.39422553043551267, 0.5996045532740645, 0.4869192163546906
+    // @eeg_data->left.beta.mean:=avg(eeg_data->left.beta.current), @eeg_data->left.alpha.mean:=avg(eeg_data->left.alpha.current), @eeg_data->right.beta.mean:=avg(eeg_data->right.beta.current), @eeg_data->right.alpha.mean:=avg(eeg_data->right.alpha.current)
+    //  0.49058866672542767,       0.3192649857042121,           0.32759836011856586,         0.3029859265905634
+    switch(currentGameModeX){
+    case RaiseRightAlpha:
+        x= eeg_data->right.alpha.current/(eeg_data->right.alpha.current + eeg_data->right.alpha.mean);
+        title += QString(" Y: LB Low %1").arg(x*100, -5, 'f', 1,'0');
+        break;
+    case LowerFrontalAlpha:
+        x= 1.0 -  ((eeg_data->left.alpha.current + eeg_data->right.alpha.current)/(eeg_data->left.alpha.current + eeg_data->left.beta.current + eeg_data->right.alpha.current + eeg_data->right.beta.current));
+        title += QString(" Y: LB Low %1").arg(x*100, -5, 'f', 1,'0');
+        break;
+    case RaiseRightAlphaToRightBeta:
+        x = (( eeg_data->right.alpha.current / ( eeg_data->right.alpha.current + eeg_data->right.beta.current )));
+        title += QString(" Y: RA>RB %1").arg(x*100, -5, 'f', 1,'0');
+        break;
+    case RaiseRightAlphaToLeft:
+        x = (( eeg_data->right.alpha.current / (eeg_data->right.alpha.current + eeg_data->left.alpha.current))) ;
+        title = QString(" X: RA>LA %1 ").arg(x*100, -5, 'f', 1,'0') + title;
+        break;
+    }
+    if(x>0.5 && y>0.5)  score++;
 
-      switch(currentGameModeX){
-      case NoGameX:
-         title = QString(" No Game X ") + title;
-          break;
-      case RightAlphaGreaterThanLeft:
-          x = (( right_alpha / (right_alpha + left_alpha))) ;
-         title = QString(" X: RA>LA %1 ").arg(x*100, -5, 'f', 1,'0') + title;
-          break;
-      case LeftBetaGreaterThanRight:
-          x = (( left_beta / (left_beta + right_beta ))) ;
-         title = QString("X: LB>RB %1 ").arg(x*100, -5, 'f', 1,'0') + title;
-          break;
-      }
+    r = y >=0 ? y*255:0;
+    g = x >=0 ? x*255:0;
+    b = n >=0 ? n*255:0;
 
-      if(currentGameModeY != NoGameY && currentGameModeX != NoGameX){
-          if(x>0.5 && y>0.5)  score++;
-          r = y >=0 ? y*255:0;
-          g = x >=0 ? x*255:0;
-          b = n >=0 ? n*255:0;
-          left_volume = y;
-          right_volume = x;
-      }else if(currentGameModeY == NoGameY){
-          y=0.5;
-          left_volume = x;
-          right_volume = x;
-          if(x>0.5)  score++;
-          g = x >=0 ? x*255:0;
-          r = g;
-          b = n >=0 ? n*255:0;
-      }else if(currentGameModeX == NoGameX){
-          x=0.5;
-          left_volume = y;
-          right_volume = y;
-          if(y>0.5)  score++;
-          r = y >=0 ? y*255:0;
-          g = r;
-          b = n >=0 ? n*255:0;
-      }else{
-          y=0.5;
-          x=0.5;
-          left_volume = .5;
-          right_volume = .5;
-          b = n >=0 ? n*255:0;
-          r = b;
-          g = b;
-      }
+    left_volume = y;
+    right_volume = x;
 
-     //std::cout << "rl_alpha:" << x << "lr_beta:" << y << "beta:" << n <<std::endl;
-     location.setX( (x-.5) * 2.0);
-     location.setY( (y-.5) * 2.0);
-     color.setRed(r);
-     color.setGreen(g);
-     color.setBlue(b);
-     left_volume = left_volume > 0 ? left_volume*100.0:0;
-     right_volume = right_volume > 0 ? right_volume * 100.0:0;
-     //std::cout << "rv: " << right_volume << "lv: "<<left_volume<<std::endl;
+    location.setX( (x-.5) * 3.0);
+    location.setY( (y-.5) * 3.0);
+    color.setRed(r);
+    color.setGreen(g);
+    color.setBlue(b);
+    left_volume = left_volume > 0 ? left_volume*100.0:0;
+    right_volume = right_volume > 0 ? right_volume * 100.0:0;
 
-     helper->setScore(score);
-     helper->setTitle(title);
-     helper->setEnhance(enhance*100.0);
-     helper->setDot(location, color);
-     volume->setMasterAlsaVolume(left_volume,  right_volume);
- }
+    helper->setScore(score);
+    helper->setTitle(title);
+    helper->setEnhance(enhance*100.0);
+    helper->setDot(location, color);
+    volume->setMasterAlsaVolume(left_volume,  right_volume);
+}
 
- void GameController::computeGameMode(){
-     currentGameModeX = NoGameX;
-     currentGameModeY = NoGameY;
+void GameController::computeGameMode(){
+    currentGameModeX = RaiseRightAlpha;
+    currentGameModeY = RaiseLeftBeta;
 
-     if( stat_raGrb < 25.0 ){
-         currentGameModeY = RightAlphaGreaterThanRightBeta;
-     }else if( stat_lbGla < 70.0){
-         currentGameModeY = LeftBetaGreaterThanLeftAlpha;
-     }else if( stat_bGa < 70.0){
-         currentGameModeY = FrontalBetaGreaterThanAlpha;
-     }else{
-         if( stat_raGla < 30.0){
-             currentGameModeX = RightAlphaGreaterThanLeft;
-         }else if( stat_lbGrb < 60.0){
-             currentGameModeX = LeftBetaGreaterThanRight;
-         }else{
-             currentGameModeX = RightAlphaGreaterThanLeft;
-             currentGameModeY = FrontalBetaGreaterThanAlpha;
-         }
-     }
- }
- //     Date			 Count	 Goal%	 		LB>RB%	 	RA>LA%	 B>A%	 	LA%	 		RA%	 		LB%	 		RB%
- //    Grand Average	     		 12.6 		 64.7	 		48.9	 		41.7	 		25.3	 		25.6	 		26.4	 		22.7
+    if( eeg_data->left.beta.mean < 0.49058866672542767 ){
+        currentGameModeY = RaiseLeftBeta;
+    }else if( eeg_data->right.beta.mean > 0.32759836011856586){
+        currentGameModeY = LowerRightBeta;
+    }else if(eeg_data->lbGra < 0.6182010750564462 ){
+        currentGameModeY = RaiseLeftBetaToRightAlpha;
+    }else if( eeg_data->lbGrb < 0.5996045532740645){
+        currentGameModeY = RaiseLeftBetaToRight;
+    }else if( eeg_data->lbGla < 0.39422553043551267){
+        currentGameModeY = RaiseLeftBetaToLeftAlpha;
+    }else if( eeg_data->bGa <  0.5680126887890662 ){
+        currentGameModeY = RaiseFrontalBetaToAlpha;
+    }else{
+        currentGameModeY = RaiseLeftBeta;
+    }
+    //@eeg_data->raGrb,                 @eeg_data->lbGla,                   @eeg_data->lbGrb ,                @eeg_data->raGla
+    //0.48048442210917675, 0.39422553043551267, 0.5996045532740645, 0.4869192163546906
+    // @eeg_data->left.beta.mean:=avg(left_beta), @eeg_data->left.alpha.mean:=avg(left_alpha), @eeg_data->right.beta.mean:=avg(right_beta), @eeg_data->right.alpha.mean:=avg(right_alpha)
+    //  0.49058866672542767,       0.3192649857042121,           0.32759836011856586,         0.3029859265905634
 
- qreal GameController::clamp(qreal n){
-     n = n>1.0 ? 1.0:n;
-     n = n<-1.0 ? -1.0:n;
-     return n;
- }
- void GameController::updateStatistics(){
-     if(db->isOpen() && session_id > 0 ){
-         q = QSqlQuery("", *db);
-         QString qry;
-         qry = QString("SELECT \
-                       t.raGrb0/t.cnt*100 raGrb0, \
-                       t.lbGla1/t.cnt*100 lbGla1, \
-                       t.lbGrb2/t.cnt*100 lbGrb2, \
-                       t.raGla3/t.cnt*100 raGla3, \
-                       t.bGa4/t.cnt*100 bGa4, t.cnt cnt, t.ms ms  FROM \
-                       (SELECT  \
-                        SUM(CASE WHEN right_alpha > right_beta THEN 1 ELSE 0 END)  raGrb0, \
-                        SUM(CASE WHEN  left_beta > left_alpha THEN 1 ELSE 0 END) lbGla1, \
-                        SUM(CASE WHEN left_beta > right_beta THEN 1 ELSE 0 END)  lbGrb2, \
-                        SUM(CASE WHEN right_alpha > left_alpha THEN 1 ELSE 0 END)  raGla3, \
-                        SUM(CASE WHEN  (right_beta + left_beta) > (right_alpha + left_alpha) THEN 1 ELSE 0 END)  bGa4, \
-                        count(*) cnt,  \
-                        MAX(msecs) ms \
-                        FROM alpha_beta  \
-                        WHERE  session_id = %1 AND msecs > %2 ) t")
-                       .arg(session_id).arg((int)(stat_ms));
-                         qDebug() << qry;
-     q.exec(qry);
-     if(q.next()){
-         stat_cnt    = q.value(5).toInt();
-         if(stat_cnt>0){
-             stat_raGrb = q.value(0).toReal();
-             stat_lbGla = q.value(1).toReal();
-             stat_lbGrb = q.value(2).toReal();
-             stat_raGla = q.value(3).toReal();
-             stat_bGa   = q.value(4).toReal();
-             stat_ms     = q.value(6).toInt();
-         }
-     }
-         q.finish();
-     }
-     std::cout << "cnt:" << stat_cnt << " B>A:" << stat_bGa << " RA>LA:" << stat_raGla
-               << " LB>RB:" << stat_lbGrb << " RA>RB:" << stat_raGrb << " LB>LA:" << stat_lbGla << std::endl;
-     computeGameMode();
+    if( eeg_data->right.alpha.mean <  0.3029859265905634){
+        currentGameModeX = RaiseRightAlpha;
+    }else if( eeg_data->raGla < 0.4869192163546906 ){
+        currentGameModeX = RaiseRightAlphaToLeft;
+    }else if( eeg_data->raGrb < 0.48048442210917675 ){
+        currentGameModeX = RaiseRightAlphaToRightBeta;
+    }else if( (eeg_data->left.alpha.mean + eeg_data->right.alpha.mean ) > (0.3192649857042121 + 0.3029859265905634)  ){
+        currentGameModeX = LowerFrontalAlpha;
+    }else{
+        currentGameModeX = RaiseRightAlpha;
+    }
+}
+
+qreal GameController::clamp(qreal n){
+    n = n>1.0 ? 1.0:n;
+    n = n<-1.0 ? -1.0:n;
+    return n;
 }

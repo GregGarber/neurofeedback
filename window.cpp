@@ -30,12 +30,21 @@ Window::Window()
     setWindowTitle(tr("DLPC Alpha Beta Neurofeedback"));
     volume_control.setupAlsa();
 
+    eeg_data.left.power.stdev = 1.828977738363615;
+    eeg_data.right.power.stdev = 1.7559313046810725;
+    eeg_data.left.power.mean = 6.123103488904469 ;
+    eeg_data.right.power.mean = 6.643216458643411;
+
     GLWidget *openGL = new GLWidget(&helper, this);
     QLabel *openGLLabel = new QLabel(tr("OpenGL"));
     openGLLabel->setAlignment(Qt::AlignHCenter);
 
     addConnection("QMYSQL3", "neurofeedback", "localhost", "qt", "yummy23@t", 3306);
+
     game = new GameController(&helper, &volume_control, &db);
+    eeg_data.left.alpha.current = 3.14;
+    game->setEEGData(eeg_data);
+    qDebug() << "back in window: "<<eeg_data.left.alpha.current;
 
     QGridLayout *layout = new QGridLayout;
     layout->addWidget(openGL, 0, 1);
@@ -46,10 +55,14 @@ Window::Window()
     QTimer *update_timer = new QTimer(this);
     connect(timer, SIGNAL(timeout()), openGL, SLOT(animate()));
     connect(update_timer, SIGNAL(timeout()), this, SLOT(getData()));
+    connect(&stats_timer, SIGNAL(timeout()), this, SLOT(updateEEGDataStatistics()));
 
     timer->start(50);
     update_timer->start(100);
 
+    stats_timer.setSingleShot(false);
+    stats_timer.setInterval( 1000*60*1 );
+    stats_timer.start();
 
 
     /* Binding of the Alpha VRPN Analog to a callback */
@@ -76,14 +89,14 @@ Window::Window()
             q.finish();
         }
     }
-   // session_id=80;
-     //       game->setSessionID(session_id);
+    // session_id=80;
+    //       game->setSessionID(session_id);
 }
 QSqlError Window::addConnection(const QString &driver, const QString &dbName, const QString &host,
-                            const QString &user, const QString &passwd, int port)
+                                const QString &user, const QString &passwd, int port)
 {
     static int cCount = 0;
-     db = QSqlDatabase::addDatabase(driver, QString("Browser%1").arg(++cCount));
+    db = QSqlDatabase::addDatabase(driver, QString("Browser%1").arg(++cCount));
     db.setDatabaseName(dbName);
     db.setHostName(host);
     db.setPort(port);
@@ -115,103 +128,71 @@ double Window::avg_deque(std::deque<float> chan_deque){
 void Window::setPower(float left, float right){
     left_power = left;
     right_power = right;
+    eeg_data.left.power.update(left);
+    eeg_data.right.power.update(right);
+    if( eeg_data.left.power.current == 0)
+        qDebug() << "Electrode Problems? Left Power:" << eeg_data.left.power.current << ", " << left;
+    if( eeg_data.right.power.current == 0)
+        qDebug() << "Electrode Problems? Right Power:" << eeg_data.right.power.current << ", " << right;
 }
 
 void Window::setAlpha(float left, float right){
-    double right_channel, left_channel;
-    left_channel = (double) left/left_power;
-    right_channel = (double) right/right_power;
+    left_alpha = (double) left/left_power;
+    right_alpha = (double) right/right_power;
 
-    if(alpha_left_deque.size() == DEQUE_SIZE){
-        if( left_channel < 2.0 * avg_deque(alpha_left_deque)){
-            alpha_left_deque.push_back(left_channel);
-                left_alpha = left_channel;
-        }
-        else{
-                left_alpha = avg_deque(alpha_left_deque);
-        }
-    }else{
-        alpha_left_deque.push_back(left_channel);
-    }
-    if(alpha_left_deque.size() > DEQUE_SIZE){
-        alpha_left_deque.pop_front();
-    }
-    left_mean_alpha = avg_deque(alpha_left_deque);
-
-    if(alpha_right_deque.size() == DEQUE_SIZE){
-        if( right_channel < 2.0 * avg_deque(alpha_right_deque)){
-            alpha_right_deque.push_back(right_channel);
-        right_alpha = right_channel;
-        }
-    else{
-        right_alpha = avg_deque(alpha_right_deque);
-
-    }
-    }else{
-        alpha_right_deque.push_back(right_channel);
-    }
-    if(alpha_right_deque.size() > DEQUE_SIZE){
-        alpha_right_deque.pop_front();
-    }
-    right_mean_alpha = avg_deque(alpha_right_deque);
+    if(eeg_data.left.power.current > 0 ) eeg_data.left.alpha.update(left / eeg_data.left.power.current );
+    if(eeg_data.right.power.current > 0 ) eeg_data.right.alpha.update(right / eeg_data.right.power.current );
 }
 
 void Window::setBeta(float left, float right){
-    double right_channel, left_channel;
-
     current_time = QDateTime::currentDateTime();
-    left_channel = (double) left/left_power;
-    right_channel = (double) right/right_power;
+    left_beta = (double) left/left_power;
+    right_beta = (double) right/right_power;
 
-    if(beta_left_deque.size() == DEQUE_SIZE){
-        if( left_channel < 1.5 * avg_deque(beta_left_deque)){
-            beta_left_deque.push_back(left_channel);
-            left_beta = left_channel;
-        }else{
-            left_beta = avg_deque(beta_left_deque);
-        }
-    }else{
-        beta_left_deque.push_back(left_channel);
-    }
-    if(beta_left_deque.size() > DEQUE_SIZE){
-        beta_left_deque.pop_front();
-    }
-    left_mean_beta = avg_deque(beta_left_deque);
-
-    if(beta_right_deque.size() == DEQUE_SIZE){
-        if( right_channel < 1.5 * avg_deque(beta_right_deque)){
-            beta_right_deque.push_back(right_channel);
-            right_beta = right_channel;
-        }else{
-            right_beta = avg_deque(beta_right_deque);
-        }
-    }else{
-        beta_right_deque.push_back(right_channel);
-    }
-    if(beta_right_deque.size() > DEQUE_SIZE){
-        beta_right_deque.pop_front();
-    }
-    right_mean_beta = avg_deque(beta_right_deque);
+    if(eeg_data.left.power.current > 0 ) eeg_data.left.beta.update(left / eeg_data.left.power.current );
+    if(eeg_data.right.power.current > 0 ) eeg_data.right.beta.update(right / eeg_data.right.power.current );
 
     //if(false && db.isOpen()){
     if(db.isOpen()){
         qstr=QString("INSERT INTO alpha_beta ")
-                     +QString("(session_id, left_alpha, right_alpha, left_beta, right_beta, left_power, right_power, msecs) ")
-                     +QString(" VALUES( %1, %2, %3, %4, %5, %6, %7, %8)")
-                .arg( session_id)
-                .arg(left_alpha)
-                .arg(right_alpha)
-                .arg(left_beta)
-                .arg(right_beta)
-                .arg(left_power)
-                .arg(right_power)
-                .arg(start_time.msecsTo(current_time));
+                        +QString("(session_id, left_alpha, right_alpha, left_beta, right_beta, left_power, right_power, msecs) ")
+                        +QString(" VALUES( %1, %2, %3, %4, %5, %6, %7, %8)")
+                        .arg( session_id)
+                        .arg(left_alpha)
+                        .arg(right_alpha)
+                        .arg(left_beta)
+                        .arg(right_beta)
+                        .arg(left_power)
+                        .arg(right_power)
+                        .arg(start_time.msecsTo(current_time));
         q.exec(qstr);
         q.finish();
     }
-        game->setData(left_alpha,  right_alpha, left_beta, right_beta);
+
+    game->setData();
 }
 
+void Window::updateEEGDataStatistics(){
+    if(db.isOpen() && session_id > 0 ){
+        QString qry;
+        qry = QString("SELECT la_stdev, lb_stdev,  lp_stdev, ra_stdev, rb_stdev, rp_stdev \
+                      FROM main_stats  \
+                      WHERE  session_id = %1 ")
+                        .arg(session_id);
+                        q.exec(qry);
+        if(q.next()){
+            eeg_data.left.alpha.stdev = q.value(0).toReal();
+            eeg_data.left.beta.stdev = q.value(1).toReal();
+            eeg_data.left.power.stdev = q.value(2).toReal();
+            eeg_data.right.alpha.stdev = q.value(3).toReal();
+            eeg_data.right.beta.stdev = q.value(4).toReal();
+            eeg_data.right.power.stdev = q.value(5).toReal();
+        }
+        q.finish();
+    }
 
-
-//! [0]
+    eeg_data.update();
+    std::cout << "win "<< " B:A:" << eeg_data.bGa << " RA>:A:" << eeg_data.raGla
+              << " LB:RB:" << eeg_data.lbGrb << " RA:RB:" << eeg_data.raGrb << " LB:LA:" << eeg_data.lbGla << std::endl;
+    game->computeGameMode();
+}
